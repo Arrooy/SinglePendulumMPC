@@ -1,0 +1,3 @@
+[submodule "ODrive_cpp"]
+	path = ODrive_cpp
+	url = https://github.com/HobJob/odrive_cpp_sdk
