@@ -1,52 +1,36 @@
 #include "Controller.h"
+#include <csignal>
 
 void wait_for_key ();
 
+bool Controller::signalFlag  = false;
 
 int main(int argc, char ** argv) {
 
-    Controller c;
-    c.loadModel(std::string("/home/adria/TFG/SinglePendulumMPC/SinglePendulum_cpp/single_pendulum_description/urdf/single_pendulum.urdf"));
-    c.loadConfig(std::string("/home/adria/TFG/SinglePendulumMPC/config_weight_terminal.yaml"));
-    //c.loadConfig(std::string("/home/adria/TFG/SinglePendulumMPC/config_swing_up.yaml"));
-    
-    c.allocateReferenceVectors();
-    
-    // Create a trajectory with 300 nodes.
-    c.create(true);
-    
-    if(c.add_callback_verbose)
-        c.addCallbackVerbose();
+    Controller c(
+        std::string("/home/adria/TFG/SinglePendulumMPC/SinglePendulum_cpp/single_pendulum_description/urdf/single_pendulum.urdf"),//Model path
+        std::string("/home/adria/TFG/SinglePendulumMPC/config.yaml")); // Configuration path
 
+    std::signal(SIGINT, c.signalHandler);
+        
     c.connectODrive();
+
+    // Create a trajectory with 300 nodes.
+    c.createDOCP(true);
     
     c.createTrajectory();
     c.initGraphs();
-  
-    // Extract the trajectory information.
-    std::vector<Eigen::VectorXd> xs(c.getXs());
-    std::vector<Eigen::VectorXd> us(c.getUs());
-
-    const std::vector<Eigen::VectorXd> mpc_xs = { xs.begin(), xs.begin() + c.T_MPC };
-    const std::vector<Eigen::VectorXd> mpc_us = { us.begin(), us.begin() + c.T_MPC };
-    
+   
     // Refactor the class to have only 100 nodes for the MPC.
-    c.create(false);
+    c.createDOCP(false);
 
-    if(c.add_callback_verbose)
-        c.addCallbackVerbose();
+    c.controlLoop();
     
-    // c.setReferences(mpc_xs, mpc_us);
-  
-    c.startGraphsThread();
-    c.controlLoop(c.control_loop_iterations, xs, us);
-    
-    c.stopGraphs();
     c.stopMotors();
+    c.stopGraphs();
     c.showGraphs();
 
     wait_for_key();
-
     return 0;
 }
 

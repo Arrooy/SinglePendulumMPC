@@ -9,12 +9,15 @@ CostModelSinglePendulum::CostModelSinglePendulum(const boost::shared_ptr<crocodd
                                                  const boost::shared_ptr<crocoddyl::ActivationModelAbstract> &activation,
                                                  const size_t &nu) : CostModelAbstractTpl(state, activation, nu) {}
 
+void CostModelSinglePendulum::setReference(double new_theta){
+    this->reference_theta = new_theta;
+}
 
 void CostModelSinglePendulum::calc(const boost::shared_ptr<crocoddyl::CostDataAbstract> &data,
                                    const Eigen::Ref<const VectorXs> &x,
                                    const Eigen::Ref<const VectorXs> &u) {
-    double c1 = cos(x[0]);
-    double s1 = sin(x[0]);
+    double c1 = cos(x[0] - reference_theta);
+    double s1 = sin(x[0] - reference_theta);
     VectorXs aux(3);
     aux << s1, 1-c1, x[1];
     data->r = aux;
@@ -25,8 +28,8 @@ void CostModelSinglePendulum::calc(const boost::shared_ptr<crocoddyl::CostDataAb
 void CostModelSinglePendulum::calcDiff(const boost::shared_ptr<crocoddyl::CostDataAbstract> &data,
                                        const Eigen::Ref<const VectorXs> &x,
                                        const Eigen::Ref<const VectorXs> &u) {
-    double c1 = cos(x[0]);
-    double s1 = sin(x[0]);
+    double c1 = cos(x[0] - reference_theta);
+    double s1 = sin(x[0] - reference_theta);
     
     activation_->calcDiff(data->activation,data->r);
 

@@ -3,7 +3,6 @@
 Graph_Logger::Graph_Logger(double dt)
 {
     this->dt = dt;
-    this->g1 = new Gnuplot(std::string("lines"));
 }
 
 Graph_Logger::~Graph_Logger(){

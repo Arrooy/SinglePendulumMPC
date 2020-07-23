@@ -47,7 +47,7 @@
 #include "yaml-cpp/yaml.h"
 
 
-#define USE_GRAPHS false
+#define USE_GRAPHS true
 
 class Controller
 {
@@ -92,7 +92,6 @@ private:
     
     bool goto_base_position;
     bool zero_the_initial_position;
-    bool config_loaded;
 
     Eigen::VectorXd initial_state;
 
@@ -109,18 +108,30 @@ private:
     std::vector<Eigen::VectorXd> state_ref;
     std::vector<Eigen::VectorXd> control_ref;
 
-public:
-    bool add_callback_verbose;
+    bool use_callback_verbose;
     int control_loop_iterations;
-        
-    double T_OCP;
+
+    // Trajectory vectors
+    std::vector<Eigen::VectorXd> trajectory_xs;
+    std::vector<Eigen::VectorXd> trajectory_us;
+
+    std::vector<Eigen::VectorXd> mpc_warmStart_xs;// = { xs.begin(), xs.begin() + c.T_MPC };
+    std::vector<Eigen::VectorXd> mpc_warmStart_us;// = { us.begin(), us.begin() + c.T_MPC };
+    
+    double T_ROUTE;
     double T_MPC;
 
+public:
+    static bool signalFlag;
+        
     Controller();
+    Controller(std::string model_path,std::string config_path);
+    
+    static void signalHandler(int s);
     
     void loadModel(std::string path);
     void loadConfig(std::string configPath);
-    void create(bool trajectory);
+    void createDOCP(bool trajectory);
     void addCallbackVerbose();
     void connectODrive();
     void defineInitialState();
@@ -130,16 +141,8 @@ public:
     void showGraphs();
     void stopGraphs();
     void stopMotors();
-
-    void allocateReferenceVectors();
     
-    const std::vector<Eigen::VectorXd> getXs();
-    const std::vector<Eigen::VectorXd> getUs();
-    
-    // If iterations is -1, there is no iterations limit in the closed loop. Once it reaches the terminal node, it stays there with those costs.
-    // If iterations is 0 the loop ends once the terminal node is reached.
-    // If iterations is > 0, the loop will remain iterating unitill the iterations are done (Counted after it reaches the terminal node).
-    void controlLoop(int iterations, std::vector<Eigen::VectorXd>& trajectory_xs, std::vector<Eigen::VectorXd>& trajectory_us);
+    void controlLoop();
 
     void setReferences(const std::vector<Eigen::VectorXd>& state_trajectory,
                                        const std::vector<Eigen::VectorXd>& control_trajectory);

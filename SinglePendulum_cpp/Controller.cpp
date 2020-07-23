@@ -1,17 +1,27 @@
 #include "Controller.h"
 
-Controller::Controller()
+Controller::Controller(std::string model_path,std::string config_path)
 {
-    config_loaded = false;
+    
+    
+    this->loadModel(model_path);
+    this->loadConfig(config_path);
+    
+    trajectory_xs.resize(T_ROUTE, state->zero());
+    trajectory_us.resize(T_ROUTE, state->zero());
+
+    mpc_warmStart_xs.resize(T_MPC, state->zero());
+    mpc_warmStart_us.resize(T_MPC, Eigen::VectorXd::Zero(1));
 }
 
 Controller::~Controller()
 {
+    std::cout << "Deleting Controller" << std::endl;
     #if USE_GRAPHS
-    if(graph_logger != nullptr)
+    if(graph_logger)
         delete graph_logger;
     #endif
-    if(r != nullptr)
+    if(r)
         delete r;
 }
 
@@ -26,14 +36,6 @@ void Controller::loadModel(std::string path)
 
     initial_state = Eigen::VectorXd(state->get_nx());
 }
-
-void Controller::allocateReferenceVectors()
-{
-    // Alloc memory for the reference vectors
-    state_ref.resize(T_MPC, state->zero());
-    control_ref.resize(T_MPC, Eigen::VectorXd::Zero(1));
-}
-
 
 void Controller::loadConfig(std::string configPath)
 {
@@ -57,7 +59,7 @@ void Controller::loadConfig(std::string configPath)
     torque_limit_ub.fill(config["tau_ub"].as<double>());
 	torque_limit_lb.fill(config["tau_lb"].as<double>());
 
-    T_OCP = config["T_OCP"].as<double>();
+    T_ROUTE = config["T_ROUTE"].as<double>();
     T_MPC = config["T_MPC"].as<double>();
 
     trajectory_solver_iterations = config["initial_solver_iterations"].as<int>();
@@ -66,20 +68,13 @@ void Controller::loadConfig(std::string configPath)
     goto_base_position = config["goto_base_position"].as<bool>();
     zero_the_initial_position = config["zero_the_initial_position"].as<bool>();
 
-    add_callback_verbose = config["add_callback_verbose"].as<bool>();
+    use_callback_verbose = config["use_callback_verbose"].as<bool>();
 
     control_loop_iterations = config["control_loop_iterations"].as<int>();
-    config_loaded = true;
 }   
 
-void Controller::create(bool trajectory)
+void Controller::createDOCP(bool trajectory)
 {
-    if(!config_loaded)
-    {
-        std::cout << "Must loadConfig() first!" << std::endl;
-        return;
-    }
-
     differential_models_running.clear();
     integrated_models_running.clear();
     
@@ -95,6 +90,9 @@ void Controller::create(bool trajectory)
     x_goal_cost = boost::make_shared<CostModelSinglePendulum>(state,
 	 		boost::make_shared<crocoddyl::ActivationModelWeightedQuad>(activation_model_weights),actuation_model->get_nu());
 
+    //Defineix la theta de referencia igual a tots els nodes. No hi ha cap WP.
+    x_goal_cost->setReference(0.0);
+
     // Add the var regularization
     running_cost_model_sum->addCost("u_reg", u_reg_cost, u_reg_weight);
     running_cost_model_sum->addCost("x_reg", x_reg_cost, x_reg_weight);
@@ -105,9 +103,10 @@ void Controller::create(bool trajectory)
     running_cost_model_sum-> addCost("x_goal", x_goal_cost, running_model_goal_weight);
     terminal_cost_model_sum->addCost("x_goal", x_goal_cost, terminal_model_goal_weight);
 
+    
     std::cout << " Running costs size " << running_cost_model_sum->get_costs().size() << std::endl;
 
-    int nodes = trajectory ? T_OCP : T_MPC;
+    int nodes = trajectory ? T_ROUTE : T_MPC;
 
     for (int i = 0; i < nodes - 1; ++i)
     {
@@ -134,6 +133,9 @@ void Controller::create(bool trajectory)
     problem = boost::make_shared<crocoddyl::ShootingProblem>(initial_state, integrated_models_running, integrated_terminal_model);
 
     solver = boost::make_shared<crocoddyl::SolverBoxFDDP>(problem);
+
+    if(use_callback_verbose)
+        addCallbackVerbose();
 }
 
 void Controller::addCallbackVerbose()
@@ -163,13 +165,26 @@ void Controller::connectODrive()
     odrive->m0->setRequestedState(AXIS_STATE_CLOSED_LOOP_CONTROL);
     
     if(goto_base_position)
+    {
+        std::cout << "Moving to starting position" << std::endl;
         odrive->m0->moveStartingPosition(250);
-    
+        usleep(2000000);
+    }
+
     if(zero_the_initial_position)
+    {
+        std::cout << "Zeroing the position" << std::endl;
         odrive->m0->zeroPosition();
+    }
 
     odrive->m0->setControlMode(CTRL_MODE_CURRENT_CONTROL);
 }
+
+void Controller::signalHandler(int s)
+{
+  signalFlag = true; // something like that
+}
+
 
 void Controller::stopMotors()
 {
@@ -187,30 +202,44 @@ void Controller::createTrajectory()
     problem->set_x0(initial_state);
     solver->solve(crocoddyl::DEFAULT_VECTOR, crocoddyl::DEFAULT_VECTOR, trajectory_solver_iterations);
     std::cout << "Trajectory generated!" << std::endl;
+    
+    trajectory_xs = solver->get_xs();
+    trajectory_us = solver->get_us();
+    
+    //Crate warmstart vectors
+    mpc_warmStart_xs = { trajectory_xs.begin(), trajectory_xs.begin() + T_MPC};
+    mpc_warmStart_us = { trajectory_us.begin(), trajectory_us.begin() + T_MPC};
+
+    //Assign the reference thetas from the trajectory to the RealTime MPC
+    
+    for(int node_index = 0; node_index < T_MPC; node_index++)
+    {
+        auto cost_model_sum = differential_models_running[node_index]->get_costs()->get_costs();
+        auto goal_cost = boost::static_pointer_cast<CostModelSinglePendulum>(cost_model_sum.find("x_goal")->second->cost);
+        auto reg_x_cost = boost::static_pointer_cast<crocoddyl::CostModelState>(cost_model_sum.find("x_reg")->second->cost);
+        auto reg_u_cost = boost::static_pointer_cast<crocoddyl::CostModelControl>(cost_model_sum.find("u_reg")->second->cost);
+        //TODO: OPTIMIIZE THE ACCES
+        Eigen::VectorXd state = trajectory_xs[node_index];
+        goal_cost->setReference(state[0]);
+        reg_x_cost->set_xref(state);
+        reg_u_cost->set_uref(trajectory_us[node_index]);
+    }
 }
 
-
-const std::vector<Eigen::VectorXd> Controller::getXs()
-{
-    return solver->get_xs();
-}   
-
-const std::vector<Eigen::VectorXd> Controller::getUs()
-{
-    return solver->get_us();
-}
-
-void Controller::controlLoop(int iterations, std::vector<Eigen::VectorXd>& trajectory_xs, std::vector<Eigen::VectorXd>& trajectory_us)
+void Controller::controlLoop()
 {
     int data_index = mpc_solver_iterations - 1;
     int time_skips = 0;
-    int end_iterations = iterations;
+    int end_iterations = control_loop_iterations;
     bool oneTime = true;
     int i = 0, j = 0, index = T_MPC - 2;
 
     float elapsedTime = 0, torke = 0;
+    
+    int warmStartIndex = 0;
+    this->startGraphsThread();
 
-    while(1){
+    while(!signalFlag){
         
         auto start = std::chrono::high_resolution_clock::now();
         
@@ -218,12 +247,27 @@ void Controller::controlLoop(int iterations, std::vector<Eigen::VectorXd>& traje
         initial_state[1] = odrive->m0->getVelEstimateInRads();
         
         problem->set_x0(initial_state);
+        solver->solve(mpc_warmStart_xs, mpc_warmStart_us, mpc_solver_iterations);
         
-        solver->solve(solver->get_xs(), solver->get_us(), mpc_solver_iterations);
+        //std::cout << "Pos " << initial_state[0] << "Vel " << initial_state[1] << std::endl;
         
         torke = solver->get_us()[data_index][0];
         odrive->m0->setTorque(torke);
     
+        //Prepare next warm start.
+        if(warmStartIndex++ + T_MPC > T_ROUTE - 1){
+            //Entering Rail MPC progressively
+            mpc_warmStart_xs = solver->get_xs();
+            mpc_warmStart_us = solver->get_us();
+
+            if(end_iterations > 0 && ++j >= end_iterations)
+                break;
+        }else{
+            //Carrot MPC
+            mpc_warmStart_xs = { trajectory_xs.begin() + warmStartIndex, trajectory_xs.begin() + T_MPC + warmStartIndex};
+            mpc_warmStart_us = { trajectory_us.begin() + warmStartIndex, trajectory_us.begin() + T_MPC + warmStartIndex};
+        }
+
         #if USE_GRAPHS
         graph_logger->appendToBuffer("computed currents", odrive->m0->castTorqueToCurrent(torke));
         graph_logger->appendToBuffer("computed positions", solver->get_xs()[data_index][0]);
@@ -231,6 +275,7 @@ void Controller::controlLoop(int iterations, std::vector<Eigen::VectorXd>& traje
         graph_logger->appendToBuffer("computed cost", solver->get_cost());
         #endif
         
+            
         /*
         if(i < T_MPC - 2){
             //problem->updateModel(T_MPC - 2 - i, integrated_terminal_model);
@@ -250,8 +295,6 @@ void Controller::controlLoop(int iterations, std::vector<Eigen::VectorXd>& traje
             break;
         }
         */
-        if(end_iterations > 0 && ++j >= end_iterations)
-            break;
 
         elapsedTime = (dt * 1000000.0f) - ((float) std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start).count());
         
@@ -259,8 +302,8 @@ void Controller::controlLoop(int iterations, std::vector<Eigen::VectorXd>& traje
             usleep(elapsedTime);
         }else{
             time_skips++;
-            if(time_skips >= 10){
-                std::cout << "Skipped 10 frames. Elapsed time was " << elapsedTime << std::endl;
+            if(time_skips >= 5){
+            std::cout << "Skipped 5 frames. Elapsed time was " << elapsedTime << std::endl;
                // break;
             }
         }
@@ -285,7 +328,7 @@ void Controller::controlLoop(int iterations, std::vector<Eigen::VectorXd>& traje
         problem->set_x0(initial_state);
 
         
-        // if(++i >= T_OCP - T_MPC - 1){
+        // if(++i >= T_ROUTE - T_MPC - 1){
         //     if(index >= 0){
         //         problem->updateModel(index, integrated_terminal_model);
         //         index --;
