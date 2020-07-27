@@ -79,6 +79,10 @@ private:
     // Cost weights
     double x_reg_weight;
     double u_reg_weight;
+
+    double trajectory_node_weight;
+    double trajectory_terminal_weight;
+    
     double running_model_goal_weight;
     double terminal_model_goal_weight;
     

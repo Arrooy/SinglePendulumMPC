@@ -34,36 +34,6 @@ int main(int argc, char ** argv) {
     return 0;
 }
 
-/*
-int main(int argc, char ** argv) {
-
-    Controller OCP;
-    OCP.loadModel(std::string("/home/adria/TFG/SinglePendulumMPC/SinglePendulum_cpp/single_pendulum_description/urdf/single_pendulum.urdf"));
-    OCP.loadConfig(std::string("/home/adria/TFG/SinglePendulumMPC/config_weight_terminal.yaml"));
-    
-    OCP.create(true);
-    
-    if(OCP.add_callback_verbose)
-        OCP.addCallbackVerbose();
-    
-    OCP.connectODrive();
-    OCP.createTrajectory();
-    
-    //c.initGraphs();
-    //c.startGraphsThread();
-
-    c.controlLoop(c.control_loop_iterations);
-
-    //c.stopGraphs();
-    c.stopMotors();
-    //c.showGraphs();
-
-    wait_for_key();
-
-    return 0;
-}
-*/
-
 void wait_for_key ()
 {
     std::cout << std::endl << "Press ENTER to continue..." << std::endl;
