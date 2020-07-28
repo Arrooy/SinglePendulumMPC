@@ -139,7 +139,7 @@ Gnuplot& Gnuplot::plot_x(const X& x, const std::string &title)
 //
 /// Plots a 2d graph from a list of doubles: x y
 //
-Gnuplot& Gnuplot::plot_xy(const  std::vector<double>& x, const  std::vector<double>& y, const std::string &title)
+Gnuplot& Gnuplot::plot_xy(const  std::vector<double>& x, const  std::vector<double>& y, const std::string &title, const std::string &colour)
 {
     if (x.size() == 0 || y.size() == 0)
     {
@@ -169,7 +169,7 @@ Gnuplot& Gnuplot::plot_xy(const  std::vector<double>& x, const  std::vector<doub
     tmp.close();
 
 
-    plotfile_xy(name, 1, 2, title);
+    plotfile_xy(name, 1, 2, title, colour);
 
     return *this;
 }
@@ -409,6 +409,11 @@ Gnuplot& Gnuplot::reset_all()
 //
 Gnuplot& Gnuplot::set_style(const std::string &stylestr)
 {
+    if(stylestr.find("circles") != std::string::npos){
+        pstyle = stylestr;
+        return *this;
+    }
+    
     if (stylestr.find("lines")          == std::string::npos  &&
         stylestr.find("points")         == std::string::npos  &&
         stylestr.find("linespoints")    == std::string::npos  &&
@@ -872,7 +877,8 @@ Gnuplot& Gnuplot::plotfile_x(const std::string &filename,
 Gnuplot& Gnuplot::plotfile_xy(const std::string &filename,
                               const unsigned int column_x,
                               const unsigned int column_y,
-                              const std::string &title)
+                              const std::string &title,
+                              const std::string &colour)
 {
     //
     // check if file exists
@@ -901,6 +907,8 @@ Gnuplot& Gnuplot::plotfile_xy(const std::string &filename,
     else
         cmdstr << "smooth " << smooth;
 
+    //Add colour!
+    cmdstr << " lc rgb \"" << colour << "\"";
     //
     // Do the actual plot
     //

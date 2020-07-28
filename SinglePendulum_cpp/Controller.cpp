@@ -164,6 +164,9 @@ void Controller::connectODrive()
 
     std::cout << "Input voltage is " << odrive->inputVoltage() << std::endl;
     
+    //Configure the ODrive.
+    //r->configureODrive(odrive, m0, nullptr);
+
     //Configure both motors
     odrive->configureMotor(m0);
     
@@ -439,19 +442,19 @@ void Controller::showGraphs()
 {
     #if USE_GRAPHS
     std::vector<std::string> datasets = {"Crocoddyl initial calculated position","ODrive real position","computed positions"};
-    graph_logger->plot("Positions", datasets,"ms","rad", false);
+    graph_logger->plot("Positions", datasets,"ms","rad", true,false);
     
     datasets = {"Crocoddyl initial calculated velocity","ODrive real velocity","computed velocities"};
-    graph_logger->plot("Velocities", datasets,"ms","rad/s", false);
+    graph_logger->plot("Velocities", datasets,"ms","rad/s", true,false);
     
     datasets = {"Crocoddyl initial calculated current","ODrive real current","computed currents"};
-    graph_logger->plot("Currents", datasets,"ms","Amps", false);
+    graph_logger->plot("Currents", datasets,"ms","Amps", true,false);
     
     datasets = {"computed cost","ODrive real position","computed positions"};
-    graph_logger->plot("Cost vs position", datasets,"ms","rad", false);
+    graph_logger->plot("Cost vs position", datasets,"ms","rad", true,false);
     
     datasets = {"computed cost","ODrive real velocity","computed velocities"};
-    graph_logger->plot("Cost vs velocity", datasets,"ms","rad/s", false);
+    graph_logger->plot("Cost vs velocity", datasets,"ms","rad/s",true, false);
     
     int aux = solver->get_xs().size() - 2;
 

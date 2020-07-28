@@ -484,10 +484,11 @@ class Gnuplot
     Gnuplot& plotfile_xy(const std::string &filename,
                          const unsigned int column_x = 1,
                          const unsigned int column_y = 2,
-                         const std::string &title = "");
+                         const std::string &title = "",
+                         const std::string &colour = "");
     ///   from data
     
-    Gnuplot& plot_xy(const  std::vector<double>& x, const  std::vector<double>& y, const std::string &title = "");
+    Gnuplot& plot_xy(const  std::vector<double>& x, const  std::vector<double>& y, const std::string &title = "", const std::string &colour = "");
 
 
     /// plot x,y pairs with dy errorbars: x y dy

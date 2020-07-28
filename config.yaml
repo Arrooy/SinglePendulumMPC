@@ -14,7 +14,7 @@ T_ROUTE: 300
 T_MPC: 100
 initial_solver_iterations: 8000
 solver_iterations: 4
-zero_the_initial_position: true
-goto_base_position: true
+zero_the_initial_position: false
+goto_base_position: false
 use_callback_verbose: true
 control_loop_iterations: -1

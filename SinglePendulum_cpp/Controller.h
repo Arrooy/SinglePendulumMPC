@@ -99,9 +99,6 @@ private:
 
     Eigen::VectorXd initial_state;
 
-    // ODrive
-    Robot *r;
-    ODrive *odrive;
 
     // Graphs
     Graph_Logger *graph_logger;
@@ -126,6 +123,11 @@ private:
     double T_MPC;
 
 public:
+
+    // ODrive
+    Robot *r;
+    ODrive *odrive;
+    
     static bool signalFlag;
         
     Controller();
