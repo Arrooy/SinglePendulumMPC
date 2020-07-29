@@ -59,6 +59,7 @@ void Graph_Logger::appendToBuffer(std::string bufferName,double value){
     }
 }
 
+
 void Graph_Logger::plot(std::string plotTitle, std::vector<std::string> datasets, std::string xlabel, std::string ylabel, bool scaleToSmallest, bool saveToFile)
 {
 
@@ -107,6 +108,39 @@ void Graph_Logger::plot(std::string plotTitle, std::vector<std::string> datasets
     g1->showonscreen();
     plots.push_back(g1);
 }   
+
+
+void Graph_Logger::plot_normalized(std::string plotTitle, std::vector<std::string> datasets){
+    
+    Gnuplot *g1 = new Gnuplot(std::string("lines"));
+
+    g1->reset_all();
+    g1->set_title(plotTitle);
+    g1->set_grid();
+
+    for(auto &dataset : datasets)
+    {
+        std::vector<double> values = m[dataset];
+        long size = values.size();
+        double maxVal = 0;
+        for(auto i = 0; i < size; ++i){
+            if(values[i] > maxVal){
+                maxVal = values[i];
+            }
+        }
+        for(auto i = 0; i < size; ++i){
+            values[i] = values[i] / maxVal;
+        }
+        
+        std::vector<double> x;
+        size = m[dataset].size();
+        //Generate the xs.
+        for(auto i = 0; i < size; ++i){
+            x.push_back(i + i * dt);
+        }
+        g1->set_style("linespoints").plot_xy(x,values,dataset);
+    }
+}
 
 void Graph_Logger::plotSubtraction(std::string plotTitle, std::vector<std::string> datasets, std::string xlabel, std::string ylabel, bool saveToFile)
 {

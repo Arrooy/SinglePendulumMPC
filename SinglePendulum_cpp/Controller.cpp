@@ -129,6 +129,7 @@ void Controller::createDOCP(bool trajectory)
         differential_models_running.push_back(diff_model);
         integrated_models_running.push_back(int_model);
     }
+    std::cout << "There are " << differential_models_running.size() << " diferential models running." << std::endl; 
 
     differential_terminal_model = boost::make_shared<crocoddyl::DifferentialActionModelFreeFwdDynamics>(state, actuation_model, terminal_cost_model_sum);
     
@@ -177,7 +178,7 @@ void Controller::connectODrive()
     if(goto_base_position)
     {
         std::cout << "Moving to starting position" << std::endl;
-        odrive->m0->moveStartingPosition(200);
+        odrive->m0->moveStartingPosition(100);
         usleep(2000000);
     }
 
@@ -208,20 +209,19 @@ void Controller::defineInitialState()
 
 void Controller::createTrajectory()
 {
-    initial_state << odrive->m0->castCPRToRad(odrive->m0->getPosEstimate()), odrive->m0->castCPRToRads(odrive->m0->getVelEstimate());
+    initial_state << odrive->m0->getPosEstimateInRad(),odrive->m0->getVelEstimateInRads();
     problem->set_x0(initial_state);
     solver->solve(crocoddyl::DEFAULT_VECTOR, crocoddyl::DEFAULT_VECTOR, trajectory_solver_iterations, false, 1e-9);
     std::cout << "Trajectory generated!" << std::endl;
     
     trajectory_xs = solver->get_xs();
     trajectory_us = solver->get_us();
-    
+
     //Crate warmstart vectors
     mpc_warmStart_xs = { trajectory_xs.begin(), trajectory_xs.begin() + T_MPC};
     mpc_warmStart_us = { trajectory_us.begin(), trajectory_us.begin() + T_MPC};
 
     //Assign the reference thetas from the trajectory to the RealTime MPC
-    
     for(int node_index = 0; node_index < T_MPC - 1; node_index++)
     {
         auto cost_model_sum = differential_models_running[node_index]->get_costs()->get_costs();
@@ -250,6 +250,9 @@ void Controller::createTrajectory()
 void Controller::controlLoop()    
 {
 
+    long iteration = 0;
+    
+    
     int time_skips = 0;
 
     int i = 0, j = 0;
@@ -257,12 +260,9 @@ void Controller::controlLoop()
     float elapsedTime = 0, torque = 0;
     int warmStartIndex = 0;
     
-    long iteration = 0;
 
     bool fa = true;
     bool fb = true;
-    bool fc = true;
-
 
     //this->startGraphsThread();
 
@@ -281,21 +281,24 @@ void Controller::controlLoop()
         }
 
         problem->set_x0(initial_state);
-        solver->solve(mpc_warmStart_xs, mpc_warmStart_us, mpc_solver_iterations);
+        solver->solve(mpc_warmStart_xs, mpc_warmStart_us, mpc_solver_iterations, false, 1e-9);
         
+
         torque = solver->get_us()[0][0];
         odrive->m0->setTorque(torque);
         
         //Prepare next warm start.
-        if(warmStartIndex + T_MPC > T_ROUTE - 1){
+        if(warmStartIndex > T_ROUTE - T_MPC - 2){
             
             if(fa){
-                std::cout << "End of carrot. Starting progressively RailMPC. " << iteration << std::endl;
+                std::cout << "End of carrot. Starting progressively RailMPC. " << iteration  << " WarmStartIndex is " << warmStartIndex << std::endl;
                 fa = false;
             }
+
             if(iter_after_xt < T_MPC - 1){
                 //Entering Rail MPC progressively
-    
+                
+                iter_after_xt++;
                 //Prepare the warmStart vectors:
                 mpc_warmStart_xs = { trajectory_xs.begin() + warmStartIndex + iter_after_xt, trajectory_xs.begin() + warmStartIndex + T_MPC};
                 mpc_warmStart_us = { trajectory_us.begin() + warmStartIndex + iter_after_xt, trajectory_us.begin() + warmStartIndex + T_MPC};
@@ -307,25 +310,9 @@ void Controller::controlLoop()
                 mpc_warmStart_xs.insert(mpc_warmStart_xs.end(), xs.end() - iter_after_xt , xs.end());
                 mpc_warmStart_us.insert(mpc_warmStart_us.end(), us.end() - iter_after_xt , us.end());
 
-                //Add the terminal cost to a new node.
-                auto cost_model_sum = differential_models_running[T_MPC - 2 - iter_after_xt]->get_costs()->get_costs().find("x_goal")->second->weight = trajectory_terminal_weight;        
-
-                for(int node_index = 0; node_index <= T_MPC - 2 - iter_after_xt; node_index++)
-                {
-                    auto cost_model_sum = differential_models_running[node_index]->get_costs()->get_costs();
-                    auto goal_cost = boost::static_pointer_cast<CostModelSinglePendulum>(cost_model_sum.find("x_goal")->second->cost);
-                    auto reg_x_cost = boost::static_pointer_cast<crocoddyl::CostModelState>(cost_model_sum.find("x_reg")->second->cost);
-                    auto reg_u_cost = boost::static_pointer_cast<crocoddyl::CostModelControl>(cost_model_sum.find("u_reg")->second->cost);
-                    
-                    Eigen::VectorXd state = mpc_warmStart_xs[node_index];
-                    goal_cost->setReference(state[0]);
-                    reg_x_cost->set_xref(state);
-                    reg_u_cost->set_uref(mpc_warmStart_us[node_index]);
-                }
-
-                //Remove the references from the last terminal cost.
-                if(iter_after_xt != 0){
-                    auto cost_model_sum = differential_models_running[T_MPC - 1 - iter_after_xt]->get_costs()->get_costs();
+                //Remove the terminal reference only once!
+                if(iter_after_xt == 1){
+                    auto cost_model_sum = differential_terminal_model->get_costs()->get_costs();
                    
                     auto goal_cost = boost::static_pointer_cast<CostModelSinglePendulum>(cost_model_sum.find("x_goal")->second->cost);
                     auto reg_x_cost = boost::static_pointer_cast<crocoddyl::CostModelState>(cost_model_sum.find("x_reg")->second->cost);
@@ -333,16 +320,54 @@ void Controller::controlLoop()
                     
                     goal_cost->setReference(0);
                     reg_x_cost->set_xref(state->zero());
-                    reg_u_cost->set_uref(Eigen::VectorXd::Zero(1));
+                    reg_u_cost->set_uref((Eigen::VectorXd::Zero(state->get_nv())));   
+                }else{
+                    //Remove the references from the last iteration terminal cost.
+                    auto cost_model_sum = differential_models_running[T_MPC - iter_after_xt]->get_costs()->get_costs();
+                   
+                    auto goal_cost = boost::static_pointer_cast<CostModelSinglePendulum>(cost_model_sum.find("x_goal")->second->cost);
+                    auto reg_x_cost = boost::static_pointer_cast<crocoddyl::CostModelState>(cost_model_sum.find("x_reg")->second->cost);
+                    auto reg_u_cost = boost::static_pointer_cast<crocoddyl::CostModelControl>(cost_model_sum.find("u_reg")->second->cost);
+                    
+                    goal_cost->setReference(0);
+                    reg_x_cost->set_xref(state->zero());
+                    reg_u_cost->set_uref((Eigen::VectorXd::Zero(state->get_nv())));
                 }
 
-                iter_after_xt++;
-            }else{
+                //Update all the nodes references.
+                for(int node_index = 0; node_index <= T_MPC - iter_after_xt - 1; node_index++)
+                {
+                    auto cost_model_sum = differential_models_running[node_index]->get_costs()->get_costs();
+                    auto goal_cost = boost::static_pointer_cast<CostModelSinglePendulum>(cost_model_sum.find("x_goal")->second->cost);
+                    auto reg_x_cost = boost::static_pointer_cast<crocoddyl::CostModelState>(cost_model_sum.find("x_reg")->second->cost);
+                    auto reg_u_cost = boost::static_pointer_cast<crocoddyl::CostModelControl>(cost_model_sum.find("u_reg")->second->cost);
+                
+                    Eigen::VectorXd state = mpc_warmStart_xs[node_index];
+                    goal_cost->setReference(state[0]);
+                    reg_x_cost->set_xref(state);
+                    reg_u_cost->set_uref(mpc_warmStart_us[node_index]);   
+                }
 
+                //Make the last node terminal by changing its weight.
+                differential_models_running[T_MPC - iter_after_xt - 1]->get_costs()->get_costs().find("x_goal")->second->weight = trajectory_terminal_weight;   
+                
+            }else{
+                    
                 if(fb){
                     std::cout << "All costs are terminal" << iteration << std::endl;
+                    //Remove the references from the first node (Last One to become Full Rail)
+                    auto cost_model_sum = differential_models_running[0]->get_costs()->get_costs();
+                   
+                    auto goal_cost = boost::static_pointer_cast<CostModelSinglePendulum>(cost_model_sum.find("x_goal")->second->cost);
+                    auto reg_x_cost = boost::static_pointer_cast<crocoddyl::CostModelState>(cost_model_sum.find("x_reg")->second->cost);
+                    auto reg_u_cost = boost::static_pointer_cast<crocoddyl::CostModelControl>(cost_model_sum.find("u_reg")->second->cost);
+                    
+                    goal_cost->setReference(0);
+                    reg_x_cost->set_xref(state->zero());
+                    reg_u_cost->set_uref((Eigen::VectorXd::Zero(state->get_nv())));
                     fb = false;
                 }
+
                 // All costs are terminal
                 mpc_warmStart_xs = solver->get_xs();
                 mpc_warmStart_us = solver->get_us();
@@ -355,9 +380,9 @@ void Controller::controlLoop()
 
             warmStartIndex++;
             //Carrot MPC
-            mpc_warmStart_xs = { trajectory_xs.begin() + warmStartIndex, trajectory_xs.begin() + T_MPC + warmStartIndex};
-            mpc_warmStart_us = { trajectory_us.begin() + warmStartIndex, trajectory_us.begin() + T_MPC + warmStartIndex};
-
+            mpc_warmStart_xs = { trajectory_xs.begin() + warmStartIndex, trajectory_xs.begin() + warmStartIndex + T_MPC};
+            mpc_warmStart_us = { trajectory_us.begin() + warmStartIndex, trajectory_us.begin() + warmStartIndex + T_MPC};
+            
             for(int node_index = 0; node_index < T_MPC - 1; node_index++)
             {
                 auto cost_model_sum = differential_models_running[node_index]->get_costs()->get_costs();
@@ -370,30 +395,32 @@ void Controller::controlLoop()
                 reg_x_cost->set_xref(state);
                 reg_u_cost->set_uref(mpc_warmStart_us[node_index]);
             }
+        
+            //Node terminal
+            auto cost_model_sum = differential_terminal_model->get_costs()->get_costs();
+            auto goal_cost = boost::static_pointer_cast<CostModelSinglePendulum>(cost_model_sum.find("x_goal")->second->cost);
+            auto reg_x_cost = boost::static_pointer_cast<crocoddyl::CostModelState>(cost_model_sum.find("x_reg")->second->cost);
+            auto reg_u_cost = boost::static_pointer_cast<crocoddyl::CostModelControl>(cost_model_sum.find("u_reg")->second->cost);    
 
-            if(warmStartIndex != T_ROUTE - T_MPC)
-            {
-                //Node terminal
-                auto cost_model_sum = differential_terminal_model->get_costs()->get_costs();
-                auto goal_cost = boost::static_pointer_cast<CostModelSinglePendulum>(cost_model_sum.find("x_goal")->second->cost);
-                auto reg_x_cost = boost::static_pointer_cast<crocoddyl::CostModelState>(cost_model_sum.find("x_reg")->second->cost);
-                auto reg_u_cost = boost::static_pointer_cast<crocoddyl::CostModelControl>(cost_model_sum.find("u_reg")->second->cost);    
-
-                Eigen::VectorXd state = trajectory_xs[T_MPC + warmStartIndex - 1];
-                goal_cost->setReference(state[0]);
-                reg_x_cost->set_xref(state);
-                reg_u_cost->set_uref(trajectory_us[T_MPC + warmStartIndex - 1]);
-            }
+            Eigen::VectorXd state = mpc_warmStart_xs[T_MPC - 1];
+            goal_cost->setReference(state[0]);
+            reg_x_cost->set_xref(state);
+            reg_u_cost->set_uref(mpc_warmStart_us[T_MPC - 1]);
         }
 
         #if USE_GRAPHS
         graph_logger->appendToBuffer("computed currents", odrive->m0->castTorqueToCurrent(torque));
         graph_logger->appendToBuffer("computed positions", solver->get_xs()[0][0]);
+        graph_logger->appendToBuffer("computed next positions", solver->get_xs()[1][0]);
+
+        graph_logger->appendToBuffer("computed next control", odrive->m0->castTorqueToCurrent(solver->get_us()[1][0]));
+
         graph_logger->appendToBuffer("computed velocities", solver->get_xs()[0][1]);
         graph_logger->appendToBuffer("computed cost", solver->get_cost());
-        graph_logger->appendToBuffer("ODrive real position", odrive->m0->getPosEstimateInRad());
-        graph_logger->appendToBuffer("ODrive real velocity", odrive->m0->getVelEstimateInRads());
+        graph_logger->appendToBuffer("ODrive real position", initial_state[0]);
+        graph_logger->appendToBuffer("ODrive real velocity", initial_state[1]);
         graph_logger->appendToBuffer("ODrive real current", odrive->m0->getCurrent());
+        
         #endif
 
         iteration++;
@@ -451,7 +478,7 @@ void Controller::initGraphs()
     
 
     //Alloc memory for the graphs:
-    std::vector<std::string> datasets = {"Crocoddyl initial calculated position","ODrive real position","computed positions",
+    std::vector<std::string> datasets = {"Crocoddyl initial calculated position","ODrive real position","computed positions","computed next positions","computed next control",
     "Crocoddyl initial calculated velocity","ODrive real velocity","computed velocities",
     "Crocoddyl initial calculated current","ODrive real current","computed currents",
     "computed cost"};
@@ -487,7 +514,7 @@ void Controller::stopGraphs()
 void Controller::showGraphs()
 {
     #if USE_GRAPHS
-    std::vector<std::string> datasets = {"Crocoddyl initial calculated position","ODrive real position","computed positions"};
+    std::vector<std::string> datasets = {"Crocoddyl initial calculated position","ODrive real position","computed positions","computed next positions","computed currents"};
     graph_logger->plot("Positions", datasets,"ms","rad", false, false);
 
     datasets = {"Crocoddyl initial calculated velocity","ODrive real velocity","computed velocities"};
@@ -502,6 +529,9 @@ void Controller::showGraphs()
     datasets = {"computed cost","ODrive real current","computed currents"};
     graph_logger->plot("Cost vs position", datasets,"ms","Amps", false, false);
     
+    datasets = {"computed cost","ODrive real position","ODrive real velocity","computed currents"};
+    graph_logger->plot_normalized("Cost Vs pos & vel", datasets);
+
     int aux = solver->get_xs().size() - 2;
 
     std::cout << "Size is " << aux << std::endl;
