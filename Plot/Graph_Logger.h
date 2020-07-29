@@ -32,6 +32,7 @@ public:
     void appendToBuffer(std::string bufferName,double value);
     std::vector<double> getBuffer(std::string bufferName);
 
+    void allocMemory( std::vector<std::string> datasets,long aditional_nodes);
     void drawMaxMinLocations(std::vector<double>maximums,std::vector<double>maximums_i,std::vector<double>minimums,std::vector<double>minimums_i);
     void appendToFile(std::string fileName, double valueToAppend);
     void plot(std::string plotTitle, std::vector<std::string> datasets, std::string xlabel, std::string ylabel,bool scaleToSmallest, bool saveToFile);

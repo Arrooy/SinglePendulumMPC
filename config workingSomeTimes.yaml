@@ -18,3 +18,4 @@ zero_the_initial_position: true
 goto_base_position: true
 use_callback_verbose: true
 control_loop_iterations: 500
+USING_URDF_MASS_VALUE: 0.26703 

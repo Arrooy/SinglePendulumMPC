@@ -8,8 +8,8 @@ void wait_for_key ();
 void recordFreeFall();
 
 int main(int argc, char ** argv) {
-    recordFreeFall();
-    /*
+    //recordFreeFall();
+    
     Controller c(
         std::string("/home/adria/TFG/SinglePendulumMPC/SinglePendulum_cpp/single_pendulum_description/urdf/single_pendulum.urdf"),//Model path
         std::string("/home/adria/TFG/SinglePendulumMPC/config.yaml")); // Configuration path
@@ -31,10 +31,10 @@ int main(int argc, char ** argv) {
     c.controlLoop();
     
     c.stopMotors();
-    c.stopGraphs();
+    //c.stopGraphs();
     c.showGraphs();
 
-    wait_for_key();*/
+    wait_for_key();
     return 0;
 }
 
@@ -48,24 +48,24 @@ void recordFreeFall() {
     c.connectODrive();
     c.odrive->m0->disable();
     
-    int rec_time = 3;               //In seconds
-    int adquisition_period = 100;   //In us
+    int rec_time = 8;               //In seconds
+    int adquisition_period = 1000;   //In us
     long loopIterations = (long)((rec_time * 1.0e6) / (double)adquisition_period);
 
     Graph_Logger * graph_logger = new Graph_Logger(1e-4);
     
     long i = 0;
     while(i++ < loopIterations){
-        graph_logger->appendToBuffer("testPos",c.odrive->m0->getPosEstimateInRad());
+        graph_logger->appendToBuffer("pendulum position",c.odrive->m0->getPosEstimateInRad());
        // graph_logger->appendToBuffer("testVel",c.odrive->m0->getVelEstimateInRads());
         
         if(i % (loopIterations / 10) == 0)
             std::cout << "Iteration: " << i << std::endl;
-        usleep(100);
+        usleep(adquisition_period);
     }
     std::cout << "Data adquisition done! Calculating dt..." << std::endl;
 
-    auto buffer = graph_logger->getBuffer("testPos");
+    auto buffer = graph_logger->getBuffer("pendulum position");
     long buffer_size = buffer.size();
     double period = -1;
     
@@ -176,11 +176,11 @@ void recordFreeFall() {
     // }
     // std::cout << std::endl;
 
-    std::cout << "Found " << maximums_i.size() << " maxes and " << minimums_i.size() << " minimums." << std::endl;
+    std::cout << "Found " << maximums_i.size() << " maximum and " << minimums_i.size() << " minimum." << std::endl;
 
         
-    std::vector<std::string> datasets = {"testPos"};
-    graph_logger->plot("Positions", datasets,"ms","rad", true, false);
+    std::vector<std::string> datasets = {"pendulum position"};
+    graph_logger->plot("Pendulum Positions", datasets,"ms","rad", false, false);
     
     graph_logger->drawMaxMinLocations(maximums,maximums_i,minimums,minimums_i);
     
@@ -213,13 +213,14 @@ void recordFreeFall() {
     std::cout << "Periods: "<< std::flush;
     for(int i = 0; i < dts.size(); i++){
         std::cout << dts[i] << " ";
-        period += dts[i];
+        if(std::abs(dts[i]) < 1e10)
+            period += dts[i];
     }
     std::cout << std::endl;
     
 
     period /= dts.size();
-    period = (period * 100.0) / 1000.0 ;// ms
+    period = (period * 1000.0) / 1000.0 ;// ms
 
     std::cout << "Calculated freq: "<< 1000.0/(period) << " dt = " << period << "ms or "<< period / 1000.0 << "s" << std::endl;
     

@@ -18,13 +18,23 @@ void Graph_Logger::adquisitionThread(ODrive *odrive, std::future<void> futureObj
     std::cout << "Doing odrive readings"<< std::endl;
     while (futureObj.wait_for(std::chrono::milliseconds(1)) == std::future_status::timeout)
     {
-        appendToBuffer("ODrive real position", odrive->m0->castCPRToRad(odrive->m0->getPosEstimate()));
-        appendToBuffer("ODrive real velocity", odrive->m0->castCPRToRads(odrive->m0->getVelEstimate()));
-        appendToBuffer("ODrive real current", odrive->m0->getCurrent());
+        // appendToBuffer("ODrive real position", odrive->m0->castCPRToRad(odrive->m0->getPosEstimate()));
+        // appendToBuffer("ODrive real velocity", odrive->m0->castCPRToRads(odrive->m0->getVelEstimate()));
+        // appendToBuffer("ODrive real current", odrive->m0->getCurrent());
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 }
 
+void Graph_Logger::allocMemory(std::vector<std::string> datasets,long aditional_nodes)
+{
+    for (auto & dataset : datasets)
+    {
+        std::vector<double> newVector;
+        newVector.reserve(aditional_nodes);
+        
+        this->m.insert(std::pair<std::string, std::vector<double>>(dataset, newVector));
+    }
+}
 
 void Graph_Logger::appendVectorToBuffer(std::string bufferName,std::vector<double> vals)
 {
@@ -63,6 +73,7 @@ void Graph_Logger::plot(std::string plotTitle, std::vector<std::string> datasets
     g1->set_ylabel(ylabel);
 
     long min = 0;
+
     if(scaleToSmallest){
         
         bool isFirstIteration = true;
@@ -90,7 +101,7 @@ void Graph_Logger::plot(std::string plotTitle, std::vector<std::string> datasets
             else
                 x.push_back(i + i * dt);
         }
-        g1->set_style("linespoints").plot_xy(x,values,dataset,"blue");
+        g1->set_style("linespoints").plot_xy(x,values,dataset);
     }
     
     g1->showonscreen();
@@ -130,8 +141,8 @@ void Graph_Logger::drawMaxMinLocations(std::vector<double>maximums,std::vector<d
         std::cout << b << std::endl;
     }
     */
-    p->set_style("circles").plot_xy(maximums_i,maximums,"Maximums","red");
-    p->set_style("circles").plot_xy(minimums_i,minimums,"Minimus","green");
+    p->set_style("circles").plot_xy(maximums_i,maximums,"Maximum","red");
+    p->set_style("circles").plot_xy(minimums_i,minimums,"Minimum","green");
     
     // p->cmd("set key box lt -1 lw 2");
     // p->cmd("set key spacing 3 font \"Helvetica, 14\"");

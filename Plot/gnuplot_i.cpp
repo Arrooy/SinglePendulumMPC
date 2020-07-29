@@ -409,10 +409,10 @@ Gnuplot& Gnuplot::reset_all()
 //
 Gnuplot& Gnuplot::set_style(const std::string &stylestr)
 {
-    if(stylestr.find("circles") != std::string::npos){
+    /*if(stylestr.find("circles") != std::string::npos){
         pstyle = stylestr;
         return *this;
-    }
+    }*/
     
     if (stylestr.find("lines")          == std::string::npos  &&
         stylestr.find("points")         == std::string::npos  &&
@@ -908,7 +908,8 @@ Gnuplot& Gnuplot::plotfile_xy(const std::string &filename,
         cmdstr << "smooth " << smooth;
 
     //Add colour!
-    cmdstr << " lc rgb \"" << colour << "\"";
+    //if(!colour.empty())
+    //    cmdstr << " lc rgb \"" << colour << "\"";
     //
     // Do the actual plot
     //
