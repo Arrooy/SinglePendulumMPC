@@ -11,7 +11,7 @@ ActuationModelSinglePendulum::ActuationModelSinglePendulum(const boost::shared_p
 
 void ActuationModelSinglePendulum::calc(const boost::shared_ptr<ActuationDataAbstract> &data, const Eigen::Ref<const VectorXs> &x,
               const Eigen::Ref<const VectorXs> &u) {
-    MathBase::MatrixXs S(this->nv,u.size());
+    MathBase::MatrixXs S(this->nv,this->nu_);
     S(0,0) = 1;
     data->tau = S * u;
 }
@@ -19,7 +19,7 @@ void ActuationModelSinglePendulum::calc(const boost::shared_ptr<ActuationDataAbs
 void ActuationModelSinglePendulum::calcDiff(const boost::shared_ptr<ActuationDataAbstract> &data, const Eigen::Ref<const VectorXs> &x,
                   const Eigen::Ref<const VectorXs> &u){
 
-    MathBase::MatrixXs S(this->nv,u.size());    
+    MathBase::MatrixXs S(this->nv,this->nu_);    
     S(0,0) = 1;
     data->dtau_du = S;
 }
