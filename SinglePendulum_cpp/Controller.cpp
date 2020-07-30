@@ -10,7 +10,7 @@ Controller::Controller(std::string model_path,std::string config_path)
     trajectory_us.resize(T_ROUTE, state->zero());
 
     mpc_warmStart_xs.resize(T_MPC, state->zero());
-    mpc_warmStart_us.resize(T_MPC, Eigen::VectorXd::Zero(1));
+    mpc_warmStart_us.resize(T_MPC, Eigen::VectorXd::Zero(actuation_model->get_nu()));
 }
 
 Controller::~Controller()
@@ -86,7 +86,7 @@ void Controller::createDOCP(bool trajectory)
     running_cost_model_sum  = boost::make_shared<crocoddyl::CostModelSum>(state, actuation_model->get_nu());
     terminal_cost_model_sum = boost::make_shared<crocoddyl::CostModelSum>(state, actuation_model->get_nu());
     
-    x_reg_cost = boost::make_shared<crocoddyl::CostModelState>(state, boost::make_shared<crocoddyl::ActivationModelQuad>(2), state->zero(),
+    x_reg_cost = boost::make_shared<crocoddyl::CostModelState>(state, boost::make_shared<crocoddyl::ActivationModelQuad>(state->get_ndx()), state->zero(),
             actuation_model->get_nu());   
     
     u_reg_cost = boost::make_shared<crocoddyl::CostModelControl>(state,boost::make_shared<crocoddyl::ActivationModelQuad>(1) ,
