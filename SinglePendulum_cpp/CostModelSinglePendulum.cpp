@@ -7,7 +7,9 @@
 
 CostModelSinglePendulum::CostModelSinglePendulum(const boost::shared_ptr<crocoddyl::StateMultibody> &state,
                                                  const boost::shared_ptr<crocoddyl::ActivationModelAbstract> &activation,
-                                                 const size_t &nu) : CostModelAbstractTpl(state, activation, nu) {}
+                                                 const size_t &nu) : CostModelAbstractTpl(state, activation, nu) {
+                                                  this->reference_theta = 0;   
+                                                 }
 
 void CostModelSinglePendulum::setReference(double new_theta){
     this->reference_theta = new_theta;

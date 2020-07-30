@@ -99,11 +99,11 @@ void Controller::createDOCP(bool trajectory)
     x_goal_cost->setReference(0.0);
 
     // Add the var regularization
-    running_cost_model_sum->addCost("u_reg", u_reg_cost, u_reg_weight);
-    running_cost_model_sum->addCost("x_reg", x_reg_cost, x_reg_weight);
-
-    terminal_cost_model_sum->addCost("u_reg", u_reg_cost, u_reg_weight);
-    terminal_cost_model_sum->addCost("x_reg", x_reg_cost, x_reg_weight);
+    if(u_reg_weight != 0) running_cost_model_sum->addCost("u_reg", u_reg_cost, u_reg_weight);
+    if(x_reg_weight != 0) running_cost_model_sum->addCost("x_reg", x_reg_cost, x_reg_weight);
+    
+    if(u_reg_weight != 0) terminal_cost_model_sum->addCost("u_reg", u_reg_cost, u_reg_weight);
+    if(x_reg_weight != 0) terminal_cost_model_sum->addCost("x_reg", x_reg_cost, x_reg_weight);
 
     if(trajectory){
         running_cost_model_sum-> addCost("x_goal", x_goal_cost, trajectory_node_weight);
@@ -216,7 +216,7 @@ void Controller::createTrajectory()
     
     trajectory_xs = solver->get_xs();
     trajectory_us = solver->get_us();
-
+    
     //Crate warmstart vectors
     mpc_warmStart_xs = { trajectory_xs.begin(), trajectory_xs.begin() + T_MPC};
     mpc_warmStart_us = { trajectory_us.begin(), trajectory_us.begin() + T_MPC};
