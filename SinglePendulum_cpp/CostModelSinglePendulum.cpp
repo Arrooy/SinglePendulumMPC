@@ -24,10 +24,11 @@ void CostModelSinglePendulum::calc(const boost::shared_ptr<crocoddyl::CostDataAb
                                    const Eigen::Ref<const VectorXs> &u) {
     double c1 = cos(x[0] - reference_theta);
     double s1 = sin(x[0] - reference_theta);
-    VectorXs aux(3);
-    aux << s1, 1 - c1, x[1] - reference_dot_theta;
-    data->r = aux;
+
+    data->r << s1, 1 - c1, x[1] - reference_dot_theta;
+    
     activation_->calc(data->activation,data->r);
+    
     data->cost = data->activation->a_value;
 }
 
