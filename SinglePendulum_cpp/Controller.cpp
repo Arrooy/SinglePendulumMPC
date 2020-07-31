@@ -193,7 +193,7 @@ void Controller::connectODrive()
 
 void Controller::signalHandler(int s)
 {
-  signalFlag = true; // something like that
+  signalFlag = true;
 }
 
 
@@ -263,8 +263,16 @@ void Controller::controlLoop()
 
     bool fa = true;
     bool fb = true;
+    
+    std::vector<boost::shared_ptr<crocoddyl::CallbackAbstract>> a;
 
     //this->startGraphsThread();
+    addCallbackVerbose();
+    solver->set_th_stop(1e-5);
+    initial_state << odrive->m0->getPosEstimateInRad(),odrive->m0->getVelEstimateInRads();
+    problem->set_x0(initial_state);
+    solver->solve(crocoddyl::DEFAULT_VECTOR, crocoddyl::DEFAULT_VECTOR, trajectory_solver_iterations, false, 1e-9);
+    solver->setCallbacks(a);
 
     while(!signalFlag){
         
@@ -273,20 +281,19 @@ void Controller::controlLoop()
         initial_state[0] = odrive->m0->getPosEstimateInRad();
         initial_state[1] = odrive->m0->getVelEstimateInRads();
         
+        problem->set_x0(initial_state);
+        solver->solve(solver->get_xs(), solver->get_us(), mpc_solver_iterations, false, 1e-9);
+
+        torque = solver->get_us()[0][0];
+        odrive->m0->setTorque(torque);
+
         //Safety check
         if(initial_state[1] > 25 || initial_state[1] < -25) 
         {
             std::cout << "Speed limit reached!" << std::endl;
             break;
         }
-
-        problem->set_x0(initial_state);
-        solver->solve(mpc_warmStart_xs, mpc_warmStart_us, mpc_solver_iterations, false, 1e-9);
-        
-
-        torque = solver->get_us()[0][0];
-        odrive->m0->setTorque(torque);
-        
+                
         //Prepare next warm start.
         if(warmStartIndex > T_ROUTE - T_MPC - 2){
             
@@ -412,6 +419,8 @@ void Controller::controlLoop()
         graph_logger->appendToBuffer("computed currents", odrive->m0->castTorqueToCurrent(torque));
         graph_logger->appendToBuffer("computed positions", solver->get_xs()[0][0]);
         graph_logger->appendToBuffer("computed next positions", solver->get_xs()[1][0]);
+        
+        graph_logger->appendToBuffer("stop value", solver->get_stop());
 
         graph_logger->appendToBuffer("computed next control", odrive->m0->castTorqueToCurrent(solver->get_us()[1][0]));
 
@@ -420,7 +429,6 @@ void Controller::controlLoop()
         graph_logger->appendToBuffer("ODrive real position", initial_state[0]);
         graph_logger->appendToBuffer("ODrive real velocity", initial_state[1]);
         graph_logger->appendToBuffer("ODrive real current", odrive->m0->getCurrent());
-        
         #endif
 
         iteration++;
@@ -481,7 +489,7 @@ void Controller::initGraphs()
     std::vector<std::string> datasets = {"Crocoddyl initial calculated position","ODrive real position","computed positions","computed next positions","computed next control",
     "Crocoddyl initial calculated velocity","ODrive real velocity","computed velocities",
     "Crocoddyl initial calculated current","ODrive real current","computed currents",
-    "computed cost"};
+    "computed cost","stop value"};
 
     long additional_nodes = control_loop_iterations > 0 ? control_loop_iterations : (T_MPC + T_ROUTE) * 5;
 
@@ -515,19 +523,22 @@ void Controller::showGraphs()
 {
     #if USE_GRAPHS
     std::vector<std::string> datasets = {"Crocoddyl initial calculated position","ODrive real position","computed positions","computed next positions","computed currents"};
-    graph_logger->plot("Positions", datasets,"ms","rad", false, false);
+    graph_logger->plot("Positions", datasets,"dt","rad", false, false);
 
     datasets = {"Crocoddyl initial calculated velocity","ODrive real velocity","computed velocities"};
-    graph_logger->plot("Velocity", datasets,"ms","rad", false, false);
+    graph_logger->plot("Velocity", datasets,"dt","rad", false, false);
 
     datasets = {"Crocoddyl initial calculated current","ODrive real current","computed currents"};
-    graph_logger->plot("Currents Scaled", datasets,"ms","Amps", false, false);
+    graph_logger->plot("Currents Scaled", datasets,"dt","Amps", false, false);
     
     datasets = {"computed cost","ODrive real position","computed positions"};
-    graph_logger->plot("Cost vs position", datasets,"ms","rad", false, false);
+    graph_logger->plot("Cost vs position", datasets,"dt","rad", false, false);
     
     datasets = {"computed cost","ODrive real current","computed currents"};
-    graph_logger->plot("Cost vs position", datasets,"ms","Amps", false, false);
+    graph_logger->plot("Cost vs current", datasets,"dt","Amps", false, false);
+    
+    datasets = {"stop value"};
+    graph_logger->plot("Solver Stop value", datasets,"dt","Amps", false, false);
     
     datasets = {"computed cost","ODrive real position","ODrive real velocity","computed currents"};
     graph_logger->plot_normalized("Cost Vs pos & vel", datasets);

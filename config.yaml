@@ -13,7 +13,7 @@ tau_lb: -0.06
 T_ROUTE: 300
 T_MPC: 100
 initial_solver_iterations: 8000
-solver_iterations: 3
+solver_iterations: 4
 zero_the_initial_position: false
 goto_base_position: true
 use_callback_verbose: true
