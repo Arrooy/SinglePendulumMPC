@@ -267,7 +267,7 @@ void Controller::controlLoop()
         
         problem->set_x0(initial_state);
         
-        solver->solve(solver->get_xs(), solver->get_us(), mpc_solver_iterations + 100, false, 1e-9);
+        solver->solve(solver->get_xs(), solver->get_us(), mpc_solver_iterations, false, 1e-9);
 
         torque = solver->get_us()[0][0];
         odrive->m0->setTorque(torque);
@@ -345,7 +345,7 @@ void Controller::controlLoop()
             
             for(int node_index = 0; node_index < T_MPC - 1; node_index++)
             {
-                boost::static_pointer_cast<CostModelSinglePendulum>(differential_models_running[node_index]->get_costs()->get_costs().find("x_goal")->second->cost)->setReference(mpc_warmStart_xs[node_index][0], trajectory_xs[node_index][1]);
+                boost::static_pointer_cast<CostModelSinglePendulum>(differential_models_running[node_index]->get_costs()->get_costs().find("x_goal")->second->cost)->setReference(mpc_warmStart_xs[node_index][0], mpc_warmStart_xs[node_index][1]);
             }
         
             //Node terminal
