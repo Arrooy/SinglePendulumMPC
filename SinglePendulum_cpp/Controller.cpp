@@ -96,7 +96,7 @@ void Controller::createDOCP(bool trajectory)
 	 		boost::make_shared<crocoddyl::ActivationModelWeightedQuad>(activation_model_weights),actuation_model->get_nu());
 
     //Defineix la theta de referencia igual a tots els nodes. No hi ha cap WP.
-    x_goal_cost->setReference(0.0);
+    x_goal_cost->setReference(0.0,0.0);
 
     // Add the var regularization
     if(u_reg_weight != 0) running_cost_model_sum->addCost("u_reg", u_reg_cost, u_reg_weight);
@@ -224,27 +224,11 @@ void Controller::createTrajectory()
     //Assign the reference thetas from the trajectory to the RealTime MPC
     for(int node_index = 0; node_index < T_MPC - 1; node_index++)
     {
-        auto cost_model_sum = differential_models_running[node_index]->get_costs()->get_costs();
-        auto goal_cost = boost::static_pointer_cast<CostModelSinglePendulum>(cost_model_sum.find("x_goal")->second->cost);
-        auto reg_x_cost = boost::static_pointer_cast<crocoddyl::CostModelState>(cost_model_sum.find("x_reg")->second->cost);
-        auto reg_u_cost = boost::static_pointer_cast<crocoddyl::CostModelControl>(cost_model_sum.find("u_reg")->second->cost);
-        
-        Eigen::VectorXd state = trajectory_xs[node_index];
-        goal_cost->setReference(state[0]);
-        reg_x_cost->set_xref(state);
-        reg_u_cost->set_uref(trajectory_us[node_index]);
+        boost::static_pointer_cast<CostModelSinglePendulum>(differential_models_running[node_index]->get_costs()->get_costs().find("x_goal")->second->cost)->setReference(trajectory_xs[node_index][0], trajectory_xs[node_index][1]);
     }
     
     //Node terminal
-    auto cost_model_sum = differential_terminal_model->get_costs()->get_costs();
-    auto goal_cost = boost::static_pointer_cast<CostModelSinglePendulum>(cost_model_sum.find("x_goal")->second->cost);
-    auto reg_x_cost = boost::static_pointer_cast<crocoddyl::CostModelState>(cost_model_sum.find("x_reg")->second->cost);
-    auto reg_u_cost = boost::static_pointer_cast<crocoddyl::CostModelControl>(cost_model_sum.find("u_reg")->second->cost);    
-
-    Eigen::VectorXd state = trajectory_xs[T_MPC - 1];
-    goal_cost->setReference(state[0]);
-    reg_x_cost->set_xref(state);
-    reg_u_cost->set_uref(trajectory_us[T_MPC - 1]);
+    boost::static_pointer_cast<CostModelSinglePendulum>(differential_terminal_model->get_costs()->get_costs().find("x_goal")->second->cost)->setReference(trajectory_xs[T_MPC - 1][0], trajectory_xs[T_MPC - 1][1]);
 }
 
 void Controller::controlLoop()    
@@ -282,7 +266,8 @@ void Controller::controlLoop()
         initial_state[1] = odrive->m0->getVelEstimateInRads();
         
         problem->set_x0(initial_state);
-        solver->solve(solver->get_xs(), solver->get_us(), mpc_solver_iterations, false, 1e-9);
+        
+        solver->solve(solver->get_xs(), solver->get_us(), mpc_solver_iterations + 100, false, 1e-9);
 
         torque = solver->get_us()[0][0];
         odrive->m0->setTorque(torque);
@@ -319,40 +304,16 @@ void Controller::controlLoop()
 
                 //Remove the terminal reference only once!
                 if(iter_after_xt == 1){
-                    auto cost_model_sum = differential_terminal_model->get_costs()->get_costs();
-                   
-                    auto goal_cost = boost::static_pointer_cast<CostModelSinglePendulum>(cost_model_sum.find("x_goal")->second->cost);
-                    auto reg_x_cost = boost::static_pointer_cast<crocoddyl::CostModelState>(cost_model_sum.find("x_reg")->second->cost);
-                    auto reg_u_cost = boost::static_pointer_cast<crocoddyl::CostModelControl>(cost_model_sum.find("u_reg")->second->cost);
-                    
-                    goal_cost->setReference(0);
-                    reg_x_cost->set_xref(state->zero());
-                    reg_u_cost->set_uref((Eigen::VectorXd::Zero(state->get_nv())));   
+                    boost::static_pointer_cast<CostModelSinglePendulum>(differential_terminal_model->get_costs()->get_costs().find("x_goal")->second->cost)->setReference(0.0, 0.0);
                 }else{
                     //Remove the references from the last iteration terminal cost.
-                    auto cost_model_sum = differential_models_running[T_MPC - iter_after_xt]->get_costs()->get_costs();
-                   
-                    auto goal_cost = boost::static_pointer_cast<CostModelSinglePendulum>(cost_model_sum.find("x_goal")->second->cost);
-                    auto reg_x_cost = boost::static_pointer_cast<crocoddyl::CostModelState>(cost_model_sum.find("x_reg")->second->cost);
-                    auto reg_u_cost = boost::static_pointer_cast<crocoddyl::CostModelControl>(cost_model_sum.find("u_reg")->second->cost);
-                    
-                    goal_cost->setReference(0);
-                    reg_x_cost->set_xref(state->zero());
-                    reg_u_cost->set_uref((Eigen::VectorXd::Zero(state->get_nv())));
+                    boost::static_pointer_cast<CostModelSinglePendulum>(differential_models_running[T_MPC - iter_after_xt]->get_costs()->get_costs().find("x_goal")->second->cost)->setReference(0.0, 0.0);
                 }
 
                 //Update all the nodes references.
                 for(int node_index = 0; node_index <= T_MPC - iter_after_xt - 1; node_index++)
                 {
-                    auto cost_model_sum = differential_models_running[node_index]->get_costs()->get_costs();
-                    auto goal_cost = boost::static_pointer_cast<CostModelSinglePendulum>(cost_model_sum.find("x_goal")->second->cost);
-                    auto reg_x_cost = boost::static_pointer_cast<crocoddyl::CostModelState>(cost_model_sum.find("x_reg")->second->cost);
-                    auto reg_u_cost = boost::static_pointer_cast<crocoddyl::CostModelControl>(cost_model_sum.find("u_reg")->second->cost);
-                
-                    Eigen::VectorXd state = mpc_warmStart_xs[node_index];
-                    goal_cost->setReference(state[0]);
-                    reg_x_cost->set_xref(state);
-                    reg_u_cost->set_uref(mpc_warmStart_us[node_index]);   
+                    boost::static_pointer_cast<CostModelSinglePendulum>(differential_models_running[node_index]->get_costs()->get_costs().find("x_goal")->second->cost)->setReference(mpc_warmStart_xs[node_index][0], mpc_warmStart_xs[node_index][1]);
                 }
 
                 //Make the last node terminal by changing its weight.
@@ -363,15 +324,7 @@ void Controller::controlLoop()
                 if(fb){
                     std::cout << "All costs are terminal" << iteration << std::endl;
                     //Remove the references from the first node (Last One to become Full Rail)
-                    auto cost_model_sum = differential_models_running[0]->get_costs()->get_costs();
-                   
-                    auto goal_cost = boost::static_pointer_cast<CostModelSinglePendulum>(cost_model_sum.find("x_goal")->second->cost);
-                    auto reg_x_cost = boost::static_pointer_cast<crocoddyl::CostModelState>(cost_model_sum.find("x_reg")->second->cost);
-                    auto reg_u_cost = boost::static_pointer_cast<crocoddyl::CostModelControl>(cost_model_sum.find("u_reg")->second->cost);
-                    
-                    goal_cost->setReference(0);
-                    reg_x_cost->set_xref(state->zero());
-                    reg_u_cost->set_uref((Eigen::VectorXd::Zero(state->get_nv())));
+                    boost::static_pointer_cast<CostModelSinglePendulum>(differential_models_running[0]->get_costs()->get_costs().find("x_goal")->second->cost)->setReference(0.0, 0.0);
                     fb = false;
                 }
 
@@ -392,27 +345,11 @@ void Controller::controlLoop()
             
             for(int node_index = 0; node_index < T_MPC - 1; node_index++)
             {
-                auto cost_model_sum = differential_models_running[node_index]->get_costs()->get_costs();
-                auto goal_cost = boost::static_pointer_cast<CostModelSinglePendulum>(cost_model_sum.find("x_goal")->second->cost);
-                auto reg_x_cost = boost::static_pointer_cast<crocoddyl::CostModelState>(cost_model_sum.find("x_reg")->second->cost);
-                auto reg_u_cost = boost::static_pointer_cast<crocoddyl::CostModelControl>(cost_model_sum.find("u_reg")->second->cost);
-                
-                Eigen::VectorXd state = mpc_warmStart_xs[node_index];
-                goal_cost->setReference(state[0]);
-                reg_x_cost->set_xref(state);
-                reg_u_cost->set_uref(mpc_warmStart_us[node_index]);
+                boost::static_pointer_cast<CostModelSinglePendulum>(differential_models_running[node_index]->get_costs()->get_costs().find("x_goal")->second->cost)->setReference(mpc_warmStart_xs[node_index][0], trajectory_xs[node_index][1]);
             }
         
             //Node terminal
-            auto cost_model_sum = differential_terminal_model->get_costs()->get_costs();
-            auto goal_cost = boost::static_pointer_cast<CostModelSinglePendulum>(cost_model_sum.find("x_goal")->second->cost);
-            auto reg_x_cost = boost::static_pointer_cast<crocoddyl::CostModelState>(cost_model_sum.find("x_reg")->second->cost);
-            auto reg_u_cost = boost::static_pointer_cast<crocoddyl::CostModelControl>(cost_model_sum.find("u_reg")->second->cost);    
-
-            Eigen::VectorXd state = mpc_warmStart_xs[T_MPC - 1];
-            goal_cost->setReference(state[0]);
-            reg_x_cost->set_xref(state);
-            reg_u_cost->set_uref(mpc_warmStart_us[T_MPC - 1]);
+            boost::static_pointer_cast<CostModelSinglePendulum>(differential_terminal_model->get_costs()->get_costs().find("x_goal")->second->cost)->setReference(mpc_warmStart_xs[T_MPC - 1][0], mpc_warmStart_xs[T_MPC - 1][1]);
         }
 
         #if USE_GRAPHS

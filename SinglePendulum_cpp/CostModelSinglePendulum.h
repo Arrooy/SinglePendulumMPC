@@ -30,6 +30,7 @@ class CostModelSinglePendulum: public crocoddyl::CostModelAbstract
 {
 private:
     double reference_theta;
+    double reference_dot_theta;
 public:
 
     CostModelSinglePendulum(const boost::shared_ptr<StateMultibody> &state,
@@ -41,7 +42,7 @@ public:
     void calcDiff(const boost::shared_ptr<CostDataAbstract> &data, const Eigen::Ref<const VectorXs> &x,
                   const Eigen::Ref<const VectorXs> &u) override;
 
-    void setReference(double new_theta);
+    void setReference(double new_theta,double new_dot_theta);
 };
 
 
