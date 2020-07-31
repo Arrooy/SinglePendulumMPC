@@ -211,12 +211,14 @@ void Controller::createTrajectory()
 {
     initial_state << odrive->m0->getPosEstimateInRad(),odrive->m0->getVelEstimateInRads();
     problem->set_x0(initial_state);
+    
     solver->solve(crocoddyl::DEFAULT_VECTOR, crocoddyl::DEFAULT_VECTOR, trajectory_solver_iterations, false, 1e-9);
+    
     std::cout << "Trajectory generated!" << std::endl;
     
     trajectory_xs = solver->get_xs();
     trajectory_us = solver->get_us();
-    
+
     //Crate warmstart vectors
     mpc_warmStart_xs = { trajectory_xs.begin(), trajectory_xs.begin() + T_MPC};
     mpc_warmStart_us = { trajectory_us.begin(), trajectory_us.begin() + T_MPC};
@@ -224,7 +226,7 @@ void Controller::createTrajectory()
     //Assign the reference thetas from the trajectory to the RealTime MPC
     for(int node_index = 0; node_index < T_MPC - 1; node_index++)
     {
-        boost::static_pointer_cast<CostModelSinglePendulum>(differential_models_running[node_index]->get_costs()->get_costs().find("x_goal")->second->cost)->setReference(trajectory_xs[node_index][0], trajectory_xs[node_index][1]);
+        boost::static_pointer_cast<CostModelSinglePendulum>(differential_models_running[node_index]->get_costs()->get_costs().find("x_goal")->second->cost)->setReference(trajectory_xs[T_MPC - 1][0], trajectory_xs[T_MPC - 1][1]);
     }
     
     //Node terminal
@@ -247,16 +249,15 @@ void Controller::controlLoop()
 
     bool fa = true;
     bool fb = true;
-    
-    std::vector<boost::shared_ptr<crocoddyl::CallbackAbstract>> a;
 
     //this->startGraphsThread();
-    addCallbackVerbose();
+    
     solver->set_th_stop(1e-5);
     initial_state << odrive->m0->getPosEstimateInRad(),odrive->m0->getVelEstimateInRads();
     problem->set_x0(initial_state);
     solver->solve(crocoddyl::DEFAULT_VECTOR, crocoddyl::DEFAULT_VECTOR, trajectory_solver_iterations, false, 1e-9);
-    solver->setCallbacks(a);
+    
+    std::cout << "MPC Initial Solve cost, stop is " << solver->get_cost() << " , " << solver->get_stop() << std::endl;
 
     while(!signalFlag){
         
@@ -266,7 +267,6 @@ void Controller::controlLoop()
         initial_state[1] = odrive->m0->getVelEstimateInRads();
         
         problem->set_x0(initial_state);
-        
         solver->solve(solver->get_xs(), solver->get_us(), mpc_solver_iterations, false, 1e-9);
 
         torque = solver->get_us()[0][0];
@@ -278,7 +278,22 @@ void Controller::controlLoop()
             std::cout << "Speed limit reached!" << std::endl;
             break;
         }
-                
+
+        /*
+        if(iteration <= T_ROUTE - T_MPC)
+        {
+            //Node terminal
+            boost::static_pointer_cast<CostModelSinglePendulum>(differential_terminal_model->get_costs()->get_costs().find("x_goal")->second->cost)->setReference(trajectory_xs[iteration + T_MPC - 1][0], trajectory_xs[iteration + T_MPC - 1][1]);
+
+            for(int node_index = 0; node_index < T_MPC - 1; node_index++)
+            {
+                boost::static_pointer_cast<CostModelSinglePendulum>(differential_models_running[node_index]->get_costs()->get_costs().find("x_goal")->second->cost)->setReference(trajectory_xs[iteration + node_index][0], trajectory_xs[iteration + node_index][1]);
+            }
+            iteration++;
+        }else{
+            
+        }*/
+
         //Prepare next warm start.
         if(warmStartIndex > T_ROUTE - T_MPC - 2){
             
@@ -313,7 +328,7 @@ void Controller::controlLoop()
                 //Update all the nodes references.
                 for(int node_index = 0; node_index <= T_MPC - iter_after_xt - 1; node_index++)
                 {
-                    boost::static_pointer_cast<CostModelSinglePendulum>(differential_models_running[node_index]->get_costs()->get_costs().find("x_goal")->second->cost)->setReference(mpc_warmStart_xs[node_index][0], mpc_warmStart_xs[node_index][1]);
+                    boost::static_pointer_cast<CostModelSinglePendulum>(differential_models_running[node_index]->get_costs()->get_costs().find("x_goal")->second->cost)->setReference(mpc_warmStart_xs[T_MPC - iter_after_xt - 1][0], mpc_warmStart_xs[T_MPC - iter_after_xt - 1][1]);
                 }
 
                 //Make the last node terminal by changing its weight.
@@ -345,7 +360,7 @@ void Controller::controlLoop()
             
             for(int node_index = 0; node_index < T_MPC - 1; node_index++)
             {
-                boost::static_pointer_cast<CostModelSinglePendulum>(differential_models_running[node_index]->get_costs()->get_costs().find("x_goal")->second->cost)->setReference(mpc_warmStart_xs[node_index][0], mpc_warmStart_xs[node_index][1]);
+                boost::static_pointer_cast<CostModelSinglePendulum>(differential_models_running[node_index]->get_costs()->get_costs().find("x_goal")->second->cost)->setReference(mpc_warmStart_xs[T_MPC - 1][0], mpc_warmStart_xs[T_MPC - 1][1]);
             }
         
             //Node terminal
